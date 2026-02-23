@@ -20,18 +20,29 @@ ratings = ratings.sample(frac=1, random_state=42).reset_index(drop=True)
 # === TRAIN/TEST SPLIT: 1 rating per utente nel test ===
 rng = np.random.default_rng(42)
 
-test_idx = (
+# === TRAIN/VAL/TEST SPLIT: 1 rating per utente in test + 1 in validation ===
+rng = np.random.default_rng(42)
+
+holdout_idx = (
     ratings
     .groupby("userId")["movieId"]
-    .apply(lambda x: rng.choice(x.index, size=1, replace=False))
+    .apply(lambda x: rng.choice(x.index, size=2, replace=False))
     .explode()
     .astype(int)
 )
 
+# trasformo in array e lo reshapo: una riga per utente, 2 indici per utente
+holdout_idx = holdout_idx.to_numpy().reshape(-1, 2)
+
+test_idx = holdout_idx[:, 0]
+val_idx  = holdout_idx[:, 1]
+
 test = ratings.loc[test_idx].copy()
-train = ratings.drop(test_idx).copy()
+val  = ratings.loc[val_idx].copy()
+train = ratings.drop(np.concatenate([test_idx, val_idx])).copy()
 
 print("Train shape:", train.shape)
+print("Val shape:", val.shape)
 print("Test shape:", test.shape)
 
 # === METRICA ===
@@ -88,3 +99,4 @@ pairs_train = set(zip(train["userId"], train["movieId"]))
 pairs_test  = set(zip(test["userId"], test["movieId"]))
 overlap = len(pairs_train.intersection(pairs_test))
 print("Overlap train-test (user,movie):", overlap)
+
