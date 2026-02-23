@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def run_mf(train, val, test, ratings, movies):
+def run_mf(train, val, test, ratings, movies, k, lr, lambda_reg, n_epochs):
     # Re-indicizzazione (molto importante)
     user_ids = train["userId"].unique()
     movie_ids = train["movieId"].unique()
@@ -9,25 +9,29 @@ def run_mf(train, val, test, ratings, movies):
     user_map = {u: i for i, u in enumerate(user_ids)}
     movie_map = {m: i for i, m in enumerate(movie_ids)}
 
+    # Copie per non modificare i df originali
+    train = train.copy()
+    val = val.copy()
+    test = test.copy()
+
     train["u"] = train["userId"].map(user_map)
     train["i"] = train["movieId"].map(movie_map)
+
+    val["u"] = val["userId"].map(user_map)
+    val["i"] = val["movieId"].map(movie_map)
 
     test["u"] = test["userId"].map(user_map)
     test["i"] = test["movieId"].map(movie_map)
 
     train = train.dropna()
+    val = val.dropna()
     test = test.dropna()
 
     # =====================
-    # PARAMETRI
+    # PARAMETRI (ora arrivano da input)
     # =====================
     n_users = train["u"].nunique()
     n_movies = train["i"].nunique()
-
-    k = 20          # fattori latenti
-    lr = 0.01       # learning rate
-    lambda_reg = 0.05
-    n_epochs = 15
 
     # =====================
     # INIZIALIZZAZIONE
@@ -64,8 +68,8 @@ def run_mf(train, val, test, ratings, movies):
             Q[i] += lr * (err * P[u] - lambda_reg * Q[i])
 
         train_rmse = rmse(train)
-        test_rmse = rmse(test)
-        print(f"Epoch {epoch:02d} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}")
+        val_rmse = rmse(val)
+        print(f"Epoch {epoch:02d} | Train RMSE: {train_rmse:.4f} | Val RMSE: {val_rmse:.4f}")
 
     # ===== FUNZIONE DI PREDIZIONE =====
     inv_user_map = {idx: uid for uid, idx in user_map.items()}
@@ -111,3 +115,6 @@ def run_mf(train, val, test, ratings, movies):
     top10 = recommend_top_n(example_user, ratings, movies, n=10)
     print("Utente:", example_user)
     print(top10)
+
+    # ✅ Serve a Optuna: restituisco la metrica da minimizzare
+    return float(val_rmse)
