@@ -66,8 +66,6 @@ print("Test:", test.shape)
 print("\n===== BASELINE =====")
 run_baseline(train, val, test)
 
-print("\n===== MATRIX FACTORIZATION =====")
-run_mf(train, val, test, ratings, movies)
 
 print("\n===== USER-BASED CF =====")
 run_usercf(train, val, test)
