@@ -123,7 +123,8 @@ def show_example_recommendations(model, ratings_df, movies_df, n=10):
         return top_df
 
     # scelgo un utente presente nel modello
-    example_user = next(iter(user_map.keys()))
-    top10 = recommend_top_n(example_user, n=n)
-    print("Utente:", example_user)
-    print(top10)
+    rng_ex = np.random.default_rng(123)
+    example_user = rng_ex.choice(train["userId"].unique())
+   top10 = recommend_top_n(example_user, ratings, movies, n=10)
+    print("Utente:", example_user) print(top10)
+
