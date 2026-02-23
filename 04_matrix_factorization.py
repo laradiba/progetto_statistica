@@ -71,12 +71,30 @@ def run_mf(train, val, test, ratings, movies, k, lr, lambda_reg, n_epochs):
         val_rmse = rmse(val)
         print(f"Epoch {epoch:02d} | Train RMSE: {train_rmse:.4f} | Val RMSE: {val_rmse:.4f}")
 
-    # ===== FUNZIONE DI PREDIZIONE =====
-    inv_user_map = {idx: uid for uid, idx in user_map.items()}
-    inv_movie_map = {idx: mid for mid, idx in movie_map.items()}
+    # ✅ Serve a Optuna: restituisco la metrica da minimizzare
+    # + restituisco anche il "modello" per poter fare raccomandazioni fuori
+    model = {
+        "mu": mu,
+        "b_u": b_u,
+        "b_i": b_i,
+        "P": P,
+        "Q": Q,
+        "user_map": user_map,
+        "movie_map": movie_map,
+    }
+    return float(val_rmse), model
+
+
+def show_example_recommendations(model, ratings_df, movies_df, n=10):
+    mu = model["mu"]
+    b_u = model["b_u"]
+    b_i = model["b_i"]
+    P = model["P"]
+    Q = model["Q"]
+    user_map = model["user_map"]
+    movie_map = model["movie_map"]
 
     def predict_rating(userId, movieId):
-        # se user o movie non sono nel train → cold start (qui non gestito)
         if userId not in user_map or movieId not in movie_map:
             return None
         u = user_map[userId]
@@ -84,18 +102,13 @@ def run_mf(train, val, test, ratings, movies, k, lr, lambda_reg, n_epochs):
         pred = mu + b_u[u] + b_i[i] + np.dot(P[u], Q[i])
         return float(np.clip(pred, 1, 5))
 
-    # ===== TOP-N RACCOMANDAZIONI PER UN UTENTE =====
-    def recommend_top_n(userId, ratings_df, movies_df, n=10):
+    def recommend_top_n(userId, n=10):
         if userId not in user_map:
             return None
 
-        # film già votati dall'utente (nel dataset originale)
         seen = set(ratings_df.loc[ratings_df["userId"] == userId, "movieId"].values)
-
-        # candidati: film presenti nel modello e non ancora visti
         candidates = [mid for mid in movie_map.keys() if mid not in seen]
 
-        # predici
         preds = []
         for mid in candidates:
             pr = predict_rating(userId, mid)
@@ -105,16 +118,12 @@ def run_mf(train, val, test, ratings, movies, k, lr, lambda_reg, n_epochs):
         preds.sort(key=lambda x: x[1], reverse=True)
         top = preds[:n]
 
-        # aggiungo titolo per interpretazione
         top_df = pd.DataFrame(top, columns=["movieId", "pred_rating"])
         top_df = top_df.merge(movies_df[["movieId", "title", "genres"]], on="movieId", how="left")
         return top_df
 
-    # Esempio: raccomandazioni per un utente a caso (presente nel train)
-    example_user = train["userId"].iloc[0]
-    top10 = recommend_top_n(example_user, ratings, movies, n=10)
+    # scelgo un utente presente nel modello
+    example_user = next(iter(user_map.keys()))
+    top10 = recommend_top_n(example_user, n=n)
     print("Utente:", example_user)
     print(top10)
-
-    # ✅ Serve a Optuna: restituisco la metrica da minimizzare
-    return float(val_rmse)
