@@ -1,102 +1,59 @@
 import pandas as pd
 import numpy as np
-from pathlib import Path
 
-# === PATHS ===
-DATA_DIR = Path("data/ml-1m")
-ratings_path = DATA_DIR / "ratings.dat"
+def run_baseline(train, val, test):
 
-# === LOAD RATINGS ===
-ratings = pd.read_csv(
-    ratings_path,
-    sep="::",
-    engine="python",
-    names=["userId", "movieId", "rating", "timestamp"]
-)
+    # === METRICA ===
+    def rmse(y_true, y_pred):
+        return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
-# Per riproducibilità
-ratings = ratings.sample(frac=1, random_state=42).reset_index(drop=True)
+    # =========================
+    # BASELINE 1: media globale
+    # =========================
+    mu = train["rating"].mean()
+    pred_mu = np.full(len(test), mu)
+    rmse_mu = rmse(test["rating"].values, pred_mu)
 
-# === TRAIN/TEST SPLIT: 1 rating per utente nel test ===
-rng = np.random.default_rng(42)
+    print("\nBaseline 1: mu")
+    print("mu =", mu)
+    print("RMSE(mu) =", rmse_mu)
 
-# === TRAIN/VAL/TEST SPLIT: 1 rating per utente in test + 1 in validation ===
-rng = np.random.default_rng(42)
+    # ===========================================
+    # BASELINE 2: mu + bias utente + bias film
+    # con regolarizzazione (consigliata)
+    # ===========================================
+    lambda_reg = 10.0
 
-holdout_idx = (
-    ratings
-    .groupby("userId")["movieId"]
-    .apply(lambda x: rng.choice(x.index, size=2, replace=False))
-    .explode()
-    .astype(int)
-)
+    # bias film
+    movie_stats = train.groupby("movieId")["rating"].agg(["sum", "count"])
+    b_i = (movie_stats["sum"] - movie_stats["count"] * mu) / (movie_stats["count"] + lambda_reg)
 
-# trasformo in array e lo reshapo: una riga per utente, 2 indici per utente
-holdout_idx = holdout_idx.to_numpy().reshape(-1, 2)
+    # bias utente (dopo aver tolto mu e b_i)
+    train_tmp = train.copy()
+    train_tmp["b_i"] = train_tmp["movieId"].map(b_i).fillna(0.0)
+    train_tmp["residual"] = train_tmp["rating"] - mu - train_tmp["b_i"]
 
-test_idx = holdout_idx[:, 0]
-val_idx  = holdout_idx[:, 1]
+    user_stats = train_tmp.groupby("userId")["residual"].agg(["sum", "count"])
+    b_u = user_stats["sum"] / (user_stats["count"] + lambda_reg)
 
-test = ratings.loc[test_idx].copy()
-val  = ratings.loc[val_idx].copy()
-train = ratings.drop(np.concatenate([test_idx, val_idx])).copy()
+    # predizione test
+    test_tmp = test.copy()
+    test_tmp["b_i"] = test_tmp["movieId"].map(b_i).fillna(0.0)
+    test_tmp["b_u"] = test_tmp["userId"].map(b_u).fillna(0.0)
 
-print("Train shape:", train.shape)
-print("Val shape:", val.shape)
-print("Test shape:", test.shape)
+    pred_bias = (mu + test_tmp["b_u"] + test_tmp["b_i"]).clip(1, 5)
+    rmse_bias = rmse(test_tmp["rating"].values, pred_bias.values)
 
-# === METRICA ===
-def rmse(y_true, y_pred):
-    return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+    print("\nBaseline 2: mu + b_u + b_i (reg)")
+    print("lambda =", lambda_reg)
+    print("RMSE(mu+b_u+b_i) =", rmse_bias)
 
-# =========================
-# BASELINE 1: media globale
-# =========================
-mu = train["rating"].mean()
-pred_mu = np.full(len(test), mu)
-rmse_mu = rmse(test["rating"].values, pred_mu)
+    # Miglioramento
+    improvement = rmse_mu - rmse_bias
+    print("\nMiglioramento RMSE:", improvement)
 
-print("\nBaseline 1: mu")
-print("mu =", mu)
-print("RMSE(mu) =", rmse_mu)
-
-# ===========================================
-# BASELINE 2: mu + bias utente + bias film
-# con regolarizzazione (consigliata)
-# ===========================================
-lambda_reg = 10.0
-
-# bias film
-movie_stats = train.groupby("movieId")["rating"].agg(["sum", "count"])
-b_i = (movie_stats["sum"] - movie_stats["count"] * mu) / (movie_stats["count"] + lambda_reg)
-
-# bias utente (dopo aver tolto mu e b_i)
-train_tmp = train.copy()
-train_tmp["b_i"] = train_tmp["movieId"].map(b_i).fillna(0.0)
-train_tmp["residual"] = train_tmp["rating"] - mu - train_tmp["b_i"]
-
-user_stats = train_tmp.groupby("userId")["residual"].agg(["sum", "count"])
-b_u = user_stats["sum"] / (user_stats["count"] + lambda_reg)
-
-# predizione test
-test_tmp = test.copy()
-test_tmp["b_i"] = test_tmp["movieId"].map(b_i).fillna(0.0)
-test_tmp["b_u"] = test_tmp["userId"].map(b_u).fillna(0.0)
-
-pred_bias = (mu + test_tmp["b_u"] + test_tmp["b_i"]).clip(1, 5)
-rmse_bias = rmse(test_tmp["rating"].values, pred_bias.values)
-
-print("\nBaseline 2: mu + b_u + b_i (reg)")
-print("lambda =", lambda_reg)
-print("RMSE(mu+b_u+b_i) =", rmse_bias)
-
-# Miglioramento
-improvement = rmse_mu - rmse_bias
-print("\nMiglioramento RMSE:", improvement)
-
-# Verifica: nessuna coppia (userId, movieId) del test deve stare nel train
-pairs_train = set(zip(train["userId"], train["movieId"]))
-pairs_test  = set(zip(test["userId"], test["movieId"]))
-overlap = len(pairs_train.intersection(pairs_test))
-print("Overlap train-test (user,movie):", overlap)
-
+    # Verifica: nessuna coppia (userId, movieId) del test deve stare nel train
+    pairs_train = set(zip(train["userId"], train["movieId"]))
+    pairs_test  = set(zip(test["userId"], test["movieId"]))
+    overlap = len(pairs_train.intersection(pairs_test))
+    print("Overlap train-test (user,movie):", overlap)
