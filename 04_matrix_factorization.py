@@ -122,9 +122,11 @@ def show_example_recommendations(model, ratings_df, movies_df, n=10):
         top_df = top_df.merge(movies_df[["movieId", "title", "genres"]], on="movieId", how="left")
         return top_df
 
-    # scelgo un utente presente nel modello
+    # scelgo un utente presente nel modello (random ma riproducibile)
     rng_ex = np.random.default_rng(123)
-    example_user = rng_ex.choice(train["userId"].unique())
-   top10 = recommend_top_n(example_user, ratings, movies, n=10)
-    print("Utente:", example_user) print(top10)
+    example_user = rng_ex.choice(list(user_map.keys()))
+
+    top10 = recommend_top_n(example_user, n=n)
+    print("Utente:", example_user)
+    print(top10)
 
