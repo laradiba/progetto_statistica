@@ -5,7 +5,6 @@ import numpy as np
 from pathlib import Path
 
 from baseline import run_baseline
-from matrix_factorization import run_mf
 from user_based_cf import run_usercf
 from tuning import run_optuna
 
@@ -71,4 +70,5 @@ print("\n===== USER-BASED CF =====")
 run_usercf(train, val, test)
 
 print("\n===== OPTUNA TUNING (MF) =====")
-run_optuna(train, val, test, ratings, movies, n_trials=20)
+run_optuna(train, val, test, ratings, movies, n_trials=5)
+
